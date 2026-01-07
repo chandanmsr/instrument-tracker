@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { database } from '../services/supabaseClient';
 import { QRCodeCanvas } from 'qrcode.react';
-import { format, addDays, isBefore } from 'date-fns';
+import { format, addDays, isBefore, differenceInDays } from 'date-fns';
 
 const Dashboard = () => {
   const [instruments, setInstruments] = useState([]);
@@ -13,6 +13,11 @@ const Dashboard = () => {
   const [deletingId, setDeletingId] = useState(null);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [instrumentToDelete, setInstrumentToDelete] = useState(null);
+
+  // Get the current URL for QR codes - FIXED for production
+  const getBaseUrl = () => {
+    return window.location.origin;
+  };
 
   useEffect(() => {
     loadInstruments();
@@ -35,13 +40,16 @@ const Dashboard = () => {
     if (!instrument.calibration_required) return 'Ready';
     if (!instrument.last_calibration_date) return 'Not Ready';
     
-    if (!instrument.next_calibration_date) return 'Unknown';
+    if (!instrument.next_calibration_date) return 'Not Ready';
     
     const nextCalibration = new Date(instrument.next_calibration_date);
     const today = new Date();
     
-    if (isBefore(nextCalibration, today)) return 'Not Ready';
-    if (addDays(today, 7) > nextCalibration) return 'Due Soon';
+    if (isBefore(nextCalibration, today)) return 'Overdue';
+    
+    const daysUntil = differenceInDays(nextCalibration, today);
+    if (daysUntil <= 7) return 'Due Soon';
+    
     return 'Ready';
   };
 
@@ -98,21 +106,10 @@ const Dashboard = () => {
     setDeletingId(instrumentToDelete.id);
     
     try {
-      // For localStorage implementation
-      const instruments = JSON.parse(localStorage.getItem('instruments') || '[]');
-      const updatedInstruments = instruments.filter(inst => inst.id !== instrumentToDelete.id);
-      localStorage.setItem('instruments', JSON.stringify(updatedInstruments));
+      await database.deleteInstrument(instrumentToDelete.id);
       
-      // For Supabase implementation (if connected)
-      try {
-        // Uncomment this when you have Supabase delete function
-        // await database.deleteInstrument(instrumentToDelete.id);
-      } catch (supabaseError) {
-        console.log('Supabase delete failed, using localStorage only');
-      }
-      
-      // Update state
-      setInstruments(updatedInstruments);
+      // Update local state
+      setInstruments(prev => prev.filter(inst => inst.id !== instrumentToDelete.id));
       
       toast.success(`"${instrumentToDelete.name}" deleted successfully`);
       
@@ -135,7 +132,7 @@ const Dashboard = () => {
     if (filterStatus === 'all') return matchesSearch;
     
     const status = getStatus(instrument);
-    if (filterStatus === 'ready') return matchesSearch && (status === 'Ready' || status === 'Due Soon');
+    if (filterStatus === 'ready') return matchesSearch && status === 'Ready';
     if (filterStatus === 'not_ready') return matchesSearch && (status === 'Not Ready' || status === 'Overdue');
     if (filterStatus === 'due_soon') return matchesSearch && status === 'Due Soon';
     if (filterStatus === 'overdue') return matchesSearch && status === 'Overdue';
@@ -143,12 +140,14 @@ const Dashboard = () => {
     return matchesSearch;
   });
 
+  // Calculate stats - FIXED to include all statuses
   const stats = {
     total: instruments.length,
     ready: instruments.filter(i => getStatus(i) === 'Ready').length,
-    notReady: instruments.filter(i => getStatus(i) === 'Not Ready' || i.status === 'Overdue').length,
+    notReady: instruments.filter(i => getStatus(i) === 'Not Ready').length,
+    overdue: instruments.filter(i => getStatus(i) === 'Overdue').length,
     dueSoon: instruments.filter(i => getStatus(i) === 'Due Soon').length,
-    overdue: instruments.filter(i => getStatus(i) === 'Overdue').length
+    notCalibrated: instruments.filter(i => !i.last_calibration_date && i.calibration_required).length
   };
 
   if (loading) {
@@ -310,15 +309,15 @@ const Dashboard = () => {
             >
               <option value="all">All Instruments</option>
               <option value="ready">Ready for Use</option>
-              <option value="not_ready">Not Ready</option>
+              <option value="not_ready">Not Ready (Including Overdue)</option>
               <option value="due_soon">Due Soon (≤ 7 days)</option>
-              <option value="overdue">Overdue</option>
+              <option value="overdue">Overdue Only</option>
             </select>
           </div>
         </div>
       </div>
 
-      {/* Stats Summary */}
+      {/* Stats Summary - FIXED: Not Ready includes Overdue */}
       <div className="card" style={{ marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
           <h3 style={{ margin: 0 }}>Quick Stats</h3>
@@ -367,8 +366,38 @@ const Dashboard = () => {
             borderRadius: '8px',
             textAlign: 'center'
           }}>
-            <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#dc3545' }}>{stats.notReady}</div>
-            <div style={{ color: '#495057', fontSize: '0.9rem' }}>Not Ready</div>
+            <div style={{ fontSize: '2rem', fontWeight: 'bold', color: '#dc3545' }}>{stats.notReady + stats.overdue}</div>
+            <div style={{ color: '#495057', fontSize: '0.9rem' }}>
+              Not Ready
+              <div style={{ fontSize: '0.8rem', marginTop: '0.25rem', color: '#666' }}>
+                ({stats.overdue} overdue, {stats.notReady} never calibrated)
+              </div>
+            </div>
+          </div>
+        </div>
+        
+        {/* Detailed Status Breakdown */}
+        <div style={{ 
+          marginTop: '1.5rem', 
+          padding: '1rem', 
+          backgroundColor: '#f8f9fa', 
+          borderRadius: '8px',
+          fontSize: '0.9rem'
+        }}>
+          <h4 style={{ marginBottom: '0.75rem' }}>Detailed Status Breakdown</h4>
+          <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
+            <div>
+              <span style={{ color: '#28a745', fontWeight: '600' }}>✅ Ready:</span> {stats.ready}
+            </div>
+            <div>
+              <span style={{ color: '#ffc107', fontWeight: '600' }}>⏰ Due Soon:</span> {stats.dueSoon}
+            </div>
+            <div>
+              <span style={{ color: '#dc3545', fontWeight: '600' }}>⚠️ Overdue:</span> {stats.overdue}
+            </div>
+            <div>
+              <span style={{ color: '#dc3545', fontWeight: '600' }}>❌ Never Calibrated:</span> {stats.notCalibrated}
+            </div>
           </div>
         </div>
       </div>
@@ -407,6 +436,10 @@ const Dashboard = () => {
             {filteredInstruments.map((instrument) => {
               const status = getStatus(instrument);
               const statusIcon = getStatusIcon(status);
+              const isOverdue = status === 'Overdue';
+              
+              // FIXED: Use current origin for QR codes
+              const qrUrl = `${getBaseUrl()}/instrument/${instrument.id}`;
               
               return (
                 <div key={instrument.id} className="card">
@@ -419,6 +452,19 @@ const Dashboard = () => {
                     <div style={{ flex: 1 }}>
                       <h3 style={{ margin: '0 0 0.5rem 0', fontSize: '1.2rem' }}>
                         {statusIcon} {instrument.name}
+                        {isOverdue && (
+                          <span style={{ 
+                            marginLeft: '0.5rem', 
+                            fontSize: '0.7rem', 
+                            backgroundColor: '#dc3545',
+                            color: 'white',
+                            padding: '0.2rem 0.5rem',
+                            borderRadius: '3px',
+                            fontWeight: '600'
+                          }}>
+                            OVERDUE
+                          </span>
+                        )}
                       </h3>
                       <p style={{ color: '#666', marginBottom: '0.5rem', fontSize: '0.9rem' }}>
                         📍 {instrument.location}
@@ -428,8 +474,9 @@ const Dashboard = () => {
                       </span>
                     </div>
                     <div style={{ textAlign: 'center' }}>
+                      {/* FIXED: QR code uses current URL */}
                       <QRCodeCanvas
-                        value={`${window.location.origin}/instrument/${instrument.id}`}
+                        value={qrUrl}
                         size={60}
                         includeMargin
                       />
@@ -456,6 +503,20 @@ const Dashboard = () => {
                           'N/A'
                         }</span>
                       </div>
+                      {instrument.next_calibration_date && (
+                        <div style={{ 
+                          display: 'flex', 
+                          justifyContent: 'space-between', 
+                          marginTop: '0.25rem',
+                          color: isOverdue ? '#dc3545' : '#666',
+                          fontSize: '0.8rem'
+                        }}>
+                          <span>Days remaining:</span>
+                          <span>
+                            {differenceInDays(new Date(instrument.next_calibration_date), new Date())} days
+                          </span>
+                        </div>
+                      )}
                     </div>
                   )}
                   

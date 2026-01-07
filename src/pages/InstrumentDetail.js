@@ -16,6 +16,11 @@ const InstrumentDetail = () => {
   const [deleting, setDeleting] = useState(false);
   const qrRef = useRef(null);
 
+  // FIXED: Get correct URL for production
+  const getBaseUrl = () => {
+    return window.location.origin;
+  };
+
   useEffect(() => {
     loadInstrument();
     
@@ -125,12 +130,14 @@ const InstrumentDetail = () => {
 
   const handlePrint = () => {
     const printWindow = window.open('', '_blank');
-    const qrValue = `${window.location.origin}/instrument/${instrument.id}`;
-    const canvas = document.getElementById('instrument-qr-code-canvas');
+    
+    // FIXED: Use current URL
+    const qrValue = `${getBaseUrl()}/instrument/${instrument.id}`;
     
     let qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=200x200&data=${encodeURIComponent(qrValue)}`;
     
-    // Use local canvas if available
+    // Try to use local canvas if available
+    const canvas = document.getElementById('instrument-qr-code-canvas');
     if (canvas) {
       qrCodeUrl = canvas.toDataURL('image/png');
     }
@@ -211,11 +218,7 @@ const InstrumentDetail = () => {
               padding-top: 20px;
               border-top: 1px solid #ddd;
             }
-            .print-button {
-              display: none;
-            }
             @media print {
-              .no-print { display: none !important; }
               body { padding: 0; }
               .header { border-bottom: 2px solid #000; }
             }
@@ -310,21 +313,7 @@ const InstrumentDetail = () => {
           <div class="footer">
             <p>Printed from Instrument Tracker</p>
             <p>Date: ${format(new Date(), 'MMMM dd, yyyy hh:mm a')}</p>
-            <p>URL: ${window.location.origin}/instrument/${id}</p>
-          </div>
-          
-          <div class="no-print" style="text-align: center; margin-top: 30px;">
-            <button onclick="window.print()" class="print-button" style="
-              padding: 10px 20px;
-              background: #667eea;
-              color: white;
-              border: none;
-              border-radius: 4px;
-              cursor: pointer;
-              font-size: 14px;
-            ">
-              🖨️ Print This Page
-            </button>
+            <p>URL: ${getBaseUrl()}/instrument/${id}</p>
           </div>
           
           <script>
@@ -415,7 +404,10 @@ const InstrumentDetail = () => {
   }
 
   const statusInfo = getStatusInfo();
-  const qrValue = `${window.location.origin}/instrument/${instrument.id}`;
+  
+  // FIXED: Use current URL for QR
+  const qrValue = `${getBaseUrl()}/instrument/${instrument.id}`;
+  
   const nextCalibrationDate = instrument.next_calibration_date 
     ? parseISO(instrument.next_calibration_date)
     : instrument.last_calibration_date 
