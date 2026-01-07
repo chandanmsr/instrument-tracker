@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 import { QRCodeCanvas } from 'qrcode.react';
 import { database } from '../services/supabaseClient';
+import { getInstrumentUrl } from '../utils/urlHelper';
 import { format, addDays, isBefore, differenceInDays, parseISO } from 'date-fns';
 
 const InstrumentDetail = () => {
@@ -17,9 +18,7 @@ const InstrumentDetail = () => {
   const qrRef = useRef(null);
 
   // FIXED: Get correct URL for production
-  const getBaseUrl = () => {
-    return window.location.origin;
-  };
+  const qrValue = getInstrumentUrl(instrument.id);
 
   useEffect(() => {
     loadInstrument();

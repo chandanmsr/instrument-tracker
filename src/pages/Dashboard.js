@@ -14,13 +14,24 @@ const Dashboard = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [instrumentToDelete, setInstrumentToDelete] = useState(null);
 
-  // Get the current URL for QR codes - FIXED for production
-  const getBaseUrl = () => {
-    return window.location.origin;
+  // FIXED: Get correct URL for QR codes - works everywhere
+  const getInstrumentUrl = (instrumentId) => {
+    // In production, use the fixed Render URL
+    if (process.env.NODE_ENV === 'production') {
+      return `https://instrument-tracker-qqes.onrender.com/instrument/${instrumentId}`;
+    }
+    // In development, use localhost
+    return `${window.location.origin}/instrument/${instrumentId}`;
   };
 
   useEffect(() => {
     loadInstruments();
+    
+    // Debug info
+    console.log('📊 Dashboard loaded');
+    console.log('📍 Current origin:', window.location.origin);
+    console.log('🔧 Environment:', process.env.NODE_ENV);
+    console.log('🏠 Public URL:', process.env.PUBLIC_URL);
   }, []);
 
   const loadInstruments = async () => {
@@ -86,20 +97,17 @@ const Dashboard = () => {
     setFilterStatus(e.target.value);
   };
 
-  // Confirm delete modal
   const confirmDelete = (instrument) => {
     setInstrumentToDelete(instrument);
     setShowDeleteModal(true);
   };
 
-  // Cancel delete
   const cancelDelete = () => {
     setShowDeleteModal(false);
     setInstrumentToDelete(null);
     setDeletingId(null);
   };
 
-  // Delete instrument
   const handleDelete = async () => {
     if (!instrumentToDelete) return;
     
@@ -107,13 +115,8 @@ const Dashboard = () => {
     
     try {
       await database.deleteInstrument(instrumentToDelete.id);
-      
-      // Update local state
       setInstruments(prev => prev.filter(inst => inst.id !== instrumentToDelete.id));
-      
       toast.success(`"${instrumentToDelete.name}" deleted successfully`);
-      
-      // Close modal and reset
       cancelDelete();
     } catch (error) {
       console.error('Error deleting instrument:', error);
@@ -122,7 +125,6 @@ const Dashboard = () => {
     }
   };
 
-  // Filter instruments based on search and status
   const filteredInstruments = instruments.filter(instrument => {
     const matchesSearch = 
       instrument.name.toLowerCase().includes(searchTerm) ||
@@ -140,7 +142,7 @@ const Dashboard = () => {
     return matchesSearch;
   });
 
-  // Calculate stats - FIXED to include all statuses
+  // Calculate stats
   const stats = {
     total: instruments.length,
     ready: instruments.filter(i => getStatus(i) === 'Ready').length,
@@ -270,7 +272,29 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Search and Filter Section */}
+      {/* Debug Info Card */}
+      <div className="card" style={{ 
+        backgroundColor: '#e7f3ff', 
+        marginBottom: '1.5rem',
+        border: '1px solid #b3d7ff'
+      }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
+          <div>
+            <strong>🌐 Live Site:</strong> https://instrument-tracker-qqes.onrender.com
+          </div>
+          <div>
+            <strong>📱 QR Codes:</strong> {process.env.NODE_ENV === 'production' ? 'Production URLs' : 'Local URLs'}
+          </div>
+          <div>
+            <strong>📊 Instruments:</strong> {stats.total}
+          </div>
+        </div>
+        <div style={{ marginTop: '0.5rem', fontSize: '0.85rem', color: '#495057' }}>
+          <em>QR codes now point to the live site and can be scanned from any device</em>
+        </div>
+      </div>
+
+      {/* Search and Filter */}
       <div className="card" style={{ marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: '250px' }}>
@@ -317,7 +341,7 @@ const Dashboard = () => {
         </div>
       </div>
 
-      {/* Stats Summary - FIXED: Not Ready includes Overdue */}
+      {/* Stats Summary */}
       <div className="card" style={{ marginBottom: '1.5rem' }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
           <h3 style={{ margin: 0 }}>Quick Stats</h3>
@@ -375,31 +399,6 @@ const Dashboard = () => {
             </div>
           </div>
         </div>
-        
-        {/* Detailed Status Breakdown */}
-        <div style={{ 
-          marginTop: '1.5rem', 
-          padding: '1rem', 
-          backgroundColor: '#f8f9fa', 
-          borderRadius: '8px',
-          fontSize: '0.9rem'
-        }}>
-          <h4 style={{ marginBottom: '0.75rem' }}>Detailed Status Breakdown</h4>
-          <div style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: '1rem' }}>
-            <div>
-              <span style={{ color: '#28a745', fontWeight: '600' }}>✅ Ready:</span> {stats.ready}
-            </div>
-            <div>
-              <span style={{ color: '#ffc107', fontWeight: '600' }}>⏰ Due Soon:</span> {stats.dueSoon}
-            </div>
-            <div>
-              <span style={{ color: '#dc3545', fontWeight: '600' }}>⚠️ Overdue:</span> {stats.overdue}
-            </div>
-            <div>
-              <span style={{ color: '#dc3545', fontWeight: '600' }}>❌ Never Calibrated:</span> {stats.notCalibrated}
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* Instruments Grid */}
@@ -438,8 +437,8 @@ const Dashboard = () => {
               const statusIcon = getStatusIcon(status);
               const isOverdue = status === 'Overdue';
               
-              // FIXED: Use current origin for QR codes
-              const qrUrl = `${getBaseUrl()}/instrument/${instrument.id}`;
+              // FIXED: QR code uses production URL
+              const qrUrl = getInstrumentUrl(instrument.id);
               
               return (
                 <div key={instrument.id} className="card">
@@ -474,13 +473,14 @@ const Dashboard = () => {
                       </span>
                     </div>
                     <div style={{ textAlign: 'center' }}>
-                      {/* FIXED: QR code uses current URL */}
                       <QRCodeCanvas
                         value={qrUrl}
                         size={60}
                         includeMargin
                       />
-                      <p style={{ fontSize: '0.7rem', color: '#666', marginTop: '0.25rem' }}>Scan QR</p>
+                      <p style={{ fontSize: '0.7rem', color: '#666', marginTop: '0.25rem' }}>
+                        Scan QR
+                      </p>
                     </div>
                   </div>
                   
@@ -503,36 +503,6 @@ const Dashboard = () => {
                           'N/A'
                         }</span>
                       </div>
-                      {instrument.next_calibration_date && (
-                        <div style={{ 
-                          display: 'flex', 
-                          justifyContent: 'space-between', 
-                          marginTop: '0.25rem',
-                          color: isOverdue ? '#dc3545' : '#666',
-                          fontSize: '0.8rem'
-                        }}>
-                          <span>Days remaining:</span>
-                          <span>
-                            {differenceInDays(new Date(instrument.next_calibration_date), new Date())} days
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  
-                  {instrument.notes && instrument.notes.length > 0 && (
-                    <div style={{ 
-                      marginBottom: '1rem',
-                      padding: '0.5rem',
-                      backgroundColor: '#f0f0f0',
-                      borderRadius: '4px',
-                      fontSize: '0.8rem',
-                      maxHeight: '3em',
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap'
-                    }}>
-                      📝 {instrument.notes.substring(0, 50)}...
                     </div>
                   )}
                   
