@@ -4,6 +4,7 @@ import { toast } from 'react-toastify';
 import { database } from '../services/supabaseClient';
 import { QRCodeCanvas } from 'qrcode.react';
 import { format, addDays, isBefore, differenceInDays } from 'date-fns';
+import { getAppBaseUrl } from '../utils/urlHelper';
 
 const Dashboard = () => {
   const [instruments, setInstruments] = useState([]);
